@@ -139,6 +139,5 @@ jobs:
           prerelease: ${{ github.ref_type == 'branch' }}
           tag_name: ${{ env.TAG_NAME }}
           name: ${{ env.RELEASE_NAME }}
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
