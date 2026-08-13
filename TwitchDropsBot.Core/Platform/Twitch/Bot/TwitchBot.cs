@@ -32,7 +32,7 @@ public class TwitchBot : BaseBot<TwitchUser>
     private IOptionsMonitor<BotSettings> _botSettings;
     private List<string> _gamesToCheck;
     private readonly Dictionary<string, DateTime> _failedRewardCodeModals = new();
-    
+
     public TwitchBot(
         TwitchUser user,
         ILogger logger,
