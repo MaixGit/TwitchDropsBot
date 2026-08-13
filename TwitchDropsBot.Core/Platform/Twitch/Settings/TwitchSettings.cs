@@ -13,6 +13,12 @@ public class TwitchSettings
     public string WatchManager { get; set; } = WatchManagerType.WatchRequest;
 
     /// <summary>
+    /// When true (default), the bot automatically claims completed drops and reward
+    /// codes. Set to false to leave completed drops unclaimed so you can claim them
+    /// manually instead.
+    /// </summary>
+    public bool AutoClaimDrops { get; set; } = true;
+
     /// When true, the bot will periodically check for newly available favourite-game
     /// campaigns while it is actively watching a non-favourite campaign, and switch to
     /// them instead of finishing the current (potentially long) drop first.
