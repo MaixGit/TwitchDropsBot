@@ -18,4 +18,16 @@ public class TwitchSettings
     /// manually instead.
     /// </summary>
     public bool AutoClaimDrops { get; set; } = true;
+
+    /// When true, the bot will periodically check for newly available favourite-game
+    /// campaigns while it is actively watching a non-favourite campaign, and switch to
+    /// them instead of finishing the current (potentially long) drop first.
+    /// </summary>
+    public bool PreemptForFavourites { get; set; } = true;
+
+    /// <summary>
+    /// How often (in minutes) the bot checks for a new favourite-game campaign while
+    /// watching a non-favourite one. Only used when PreemptForFavourites is true.
+    /// </summary>
+    public int PreemptCheckIntervalMinutes { get; set; } = 5;
 }

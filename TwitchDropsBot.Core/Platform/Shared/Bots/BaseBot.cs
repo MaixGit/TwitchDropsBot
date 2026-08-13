@@ -59,6 +59,13 @@ public abstract class BaseBot<TUser> where TUser : BotUser
                 Logger.LogDebug($"Waiting {BotSettings.CurrentValue.WaitingSeconds} seconds before trying again.");
                 waitingTime = TimeSpan.FromSeconds(BotSettings.CurrentValue.WaitingSeconds);
             }
+            catch (HigherPriorityCampaignFound ex)
+            {
+                Logger.LogInformation(ex.Message);
+                // Re-run the selection loop almost immediately so the newly found
+                // favourite campaign gets picked up right away.
+                waitingTime = TimeSpan.FromSeconds(5);
+            }
             catch (OperationCanceledException ex)
             {
                 Logger.LogDebug(ex.Message);
