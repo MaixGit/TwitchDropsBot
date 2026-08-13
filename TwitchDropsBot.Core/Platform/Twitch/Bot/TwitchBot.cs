@@ -31,7 +31,8 @@ public class TwitchBot : BaseBot<TwitchUser>
     private List<AbstractCampaign> finishedCampaigns;
     private IOptionsMonitor<BotSettings> _botSettings;
     private List<string> _gamesToCheck;
-
+    private readonly Dictionary<string, DateTime> _failedRewardCodeModals = new();
+    
     public TwitchBot(
         TwitchUser user,
         ILogger logger,
@@ -910,6 +911,16 @@ public class TwitchBot : BaseBot<TwitchUser>
         
         foreach (var earnedDropRewardEdge in earnedDropRewardToClaim)
         {
+            var rewardId = earnedDropRewardEdge.Node.Id;
+            if (_failedRewardCodeModals.TryGetValue(rewardId, out var failedTime))
+            {
+                if (DateTime.UtcNow - failedTime < TimeSpan.FromHours(8))
+                {
+                    continue;
+                }
+                _failedRewardCodeModals.Remove(rewardId);
+            }
+
             if (earnedDropRewardEdge.Node.Item.DistributionType != DistributionType.CODE)
             {
                 continue;
@@ -917,7 +928,7 @@ public class TwitchBot : BaseBot<TwitchUser>
             
             try
             {
-                var rewardCampaignCode = await BotUser.TwitchRepository.RewardCodeModal(earnedDropRewardEdge.Node.Campaign.Id, earnedDropRewardEdge.Node.Id);
+                var rewardCampaignCode = await BotUser.TwitchRepository.RewardCodeModal(earnedDropRewardEdge.Node.Campaign.Id, rewardId);
                 Logger.LogInformation("Code {Code} rewarded for {ItemName}", rewardCampaignCode.Value, earnedDropRewardEdge.Node.Item.Name);
 
                 var gameName = earnedDropRewardEdge.Node.Campaign?.Game?.DisplayName ?? earnedDropRewardEdge.Node.Campaign?.Game?.Name ?? "Unknown Game";
@@ -928,10 +939,11 @@ public class TwitchBot : BaseBot<TwitchUser>
             }
             catch (Exception e)
             {
+                _failedRewardCodeModals[rewardId] = DateTime.UtcNow;
                 var itemName = earnedDropRewardEdge.Node.Item?.Name ?? "Unknown Item";
                 var itemImage = earnedDropRewardEdge.Node.Item?.ThumbnailURL ?? earnedDropRewardEdge.Node.Campaign?.Game?.BoxArtUrl ?? string.Empty;
-                Logger.LogError(e, $"Failed to fetch reward code for {itemName}.");
-                var message = $"Can't fetch reward code for {itemName}. Twitch API error.";
+                Logger.LogError(e, $"Failed to fetch reward code for {itemName}. Skipping for 8 hours.");
+                var message = $"Can't fetch reward code for {itemName}. Twitch API error. Claim skipped for 8 hours.";
                 await NotifyError("CLAIM ERROR", message, itemImage);
             }
             finally
