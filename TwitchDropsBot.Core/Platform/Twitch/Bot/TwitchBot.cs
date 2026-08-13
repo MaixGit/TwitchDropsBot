@@ -133,6 +133,12 @@ public class TwitchBot : BaseBot<TwitchUser>
 
         thingsToWatch = favouriteCampaigns.Concat(thingsToWatch).ToList();
 
+        // Snapshot of every campaign we already know about at the start of this cycle.
+        // Used later to detect campaigns that appear *while* we are watching, so we
+        // only preempt for genuinely new favourite campaigns rather than ones we've
+        // already seen and decided (for whatever reason) not to watch right now.
+        var knownCampaignIds = thingsToWatch.Select(x => x.Id).ToHashSet();
+
         TimeBasedDrop? timeBasedDrop = null;
         DropCurrentSession? dropCurrentSession = null;
         DropsRewardGroup? dropCurrentRewardGroup = null;
@@ -251,7 +257,7 @@ public class TwitchBot : BaseBot<TwitchUser>
         BotUser.Status = BotStatus.Watching;
         Logger.LogInformation(
             $"Current drop campaign: {campaign.Name} ({campaign.Game?.DisplayName}), watching {broadcaster.Login} | {broadcaster.Id}");
-        await WatchStreamAsync(broadcaster, dropCurrentRewardGroup, campaign);
+        await WatchStreamAsync(broadcaster, dropCurrentRewardGroup, campaign, knownCampaignIds);
 
         Logger.LogDebug("Loop ended");
     }
@@ -469,6 +475,7 @@ public class TwitchBot : BaseBot<TwitchUser>
 
     private async Task WatchStreamAsync(User broadcaster, DropsRewardGroup dropCurrentRewardGroup,
         AbstractCampaign campaign,
+        HashSet<string>? knownCampaignIds = null,
         int? minutes = null)
     {
         var stuckCounter = 0;
@@ -478,6 +485,13 @@ public class TwitchBot : BaseBot<TwitchUser>
 
         BotUser.CurrentMinutesWatched = minuteWatched;
         BotUser.RequiredMinutesWatched = requiredMinutesToWatch;
+
+        // The main polling loop below runs roughly once per minute (60 second delay),
+        // so we use a simple iteration counter as a proxy for elapsed minutes to decide
+        // when it's time to check for a newly available favourite campaign.
+        var isCurrentCampaignFavourite = campaign.Game?.IsFavorite ?? false;
+        var pollIterations = 0;
+        var preemptCheckIntervalIterations = Math.Max(1, TwitchSettings.PreemptCheckIntervalMinutes);
 
         if (minuteWatched.HasValue && requiredMinutesToWatch.HasValue)
         {
@@ -615,9 +629,56 @@ public class TwitchBot : BaseBot<TwitchUser>
             }
 
             await Task.Delay(TimeSpan.FromSeconds(60), BotUser.CancellationTokenSource?.Token ?? System.Threading.CancellationToken.None);
+
+            pollIterations++;
+
+            if (!isCurrentCampaignFavourite &&
+                knownCampaignIds is not null &&
+                TwitchSettings.PreemptForFavourites &&
+                pollIterations % preemptCheckIntervalIterations == 0)
+            {
+                var newFavouriteCampaign = await CheckForNewFavouriteCampaignAsync(knownCampaignIds, campaign);
+
+                if (newFavouriteCampaign is not null)
+                {
+                    Logger.LogInformation(
+                        "Found new favourite campaign '{NewCampaignName}' ({NewCampaignGame}) while watching '{CurrentCampaignName}', switching...",
+                        newFavouriteCampaign.Name, newFavouriteCampaign.Game?.DisplayName, campaign.Name);
+                    BotUser.WatchManager.Close();
+                    throw new HigherPriorityCampaignFound(
+                        $"New favourite campaign found: {newFavouriteCampaign.Name} ({newFavouriteCampaign.Game?.DisplayName})");
+                }
+            }
         }
 
         BotUser.WatchManager.Close();
+    }
+
+    /// <summary>
+    /// Fetches the current list of available campaigns and returns the first favourite-game
+    /// campaign that isn't the one currently being watched, hasn't already been finished, and
+    /// wasn't already known about when the current watch session started. This lets the bot
+    /// react to favourite campaigns that appear (or become claimable) mid-watch instead of only
+    /// checking for them between full StartAsync cycles.
+    /// </summary>
+    private async Task<AbstractCampaign?> CheckForNewFavouriteCampaignAsync(HashSet<string> knownCampaignIds,
+        AbstractCampaign currentCampaign)
+    {
+        try
+        {
+            var freshCampaigns = await BotUser.TwitchRepository.FetchDropsAsync();
+
+            return freshCampaigns.FirstOrDefault(x =>
+                x.Id != currentCampaign.Id &&
+                (x.Game?.IsFavorite ?? false) &&
+                !knownCampaignIds.Contains(x.Id) &&
+                !finishedCampaigns.Any(f => f.Id == x.Id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error while checking for new favourite campaigns");
+            return null;
+        }
     }
 
     private async Task<(AbstractCampaign? campaign, User? broadcaster)> SelectBroadcasterAsync(
