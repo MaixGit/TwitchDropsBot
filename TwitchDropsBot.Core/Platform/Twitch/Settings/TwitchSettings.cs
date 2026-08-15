@@ -13,9 +13,7 @@ public class TwitchSettings
     public string WatchManager { get; set; } = WatchManagerType.WatchRequest;
 
     /// <summary>
-    /// When true (default), the bot automatically claims completed drops and reward
-    /// codes. Set to false to leave completed drops unclaimed so you can claim them
-    /// manually instead.
+    /// When true (default), the bot automatically claims completed drops and reward codes.
     /// </summary>
     public bool AutoClaimDrops { get; set; } = true;
 }
