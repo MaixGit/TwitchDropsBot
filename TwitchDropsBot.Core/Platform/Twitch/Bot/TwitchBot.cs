@@ -54,6 +54,13 @@ public class TwitchBot : BaseBot<TwitchUser>
         return user.FavouriteGames;
     }
 
+    public List<String> GetUserAvoidGames()
+    {
+        var user = BotSettings.CurrentValue.TwitchSettings.TwitchUsers.Find(user => user.Id == BotUser.Id);
+
+        return user.AvoidGames;
+    }
+
     protected override async Task StartAsync()
     {
         // Refresh data
@@ -62,6 +69,15 @@ public class TwitchBot : BaseBot<TwitchUser>
         _gamesToCheck = userFavoriteGames.Count > 0
             ? userFavoriteGames
             : _botSettings.CurrentValue.FavouriteGames;
+
+        // Refresh avoid games the same way favourites are refreshed: per-account list
+        // overrides the global one, falling back to the global list when the account
+        // doesn't define its own.
+        var userAvoidGames = GetUserAvoidGames();
+
+        BotUser.AvoidGames = userAvoidGames.Count > 0
+            ? userAvoidGames
+            : _botSettings.CurrentValue.AvoidGames;
 
         BotUser.OnlyFavouriteGames = TwitchSettings.OnlyFavouriteGames;
         BotUser.OnlyConnectedAccounts = TwitchSettings.OnlyConnectedAccounts;
@@ -634,6 +650,21 @@ public class TwitchBot : BaseBot<TwitchUser>
             campaigns.RemoveAll(x =>
                 TwitchSettings.AvoidCampaign.Contains(x.Name,
                     StringComparer.OrdinalIgnoreCase));
+        }
+
+        // Filter out games from this account's (or, if none is set, the global)
+        // AvoidGames list. This was previously computed on BotUser but never
+        // actually consulted anywhere, so neither the per-account nor the global
+        // avoidGames setting had any effect on campaign selection.
+        if (BotUser.AvoidGames.Count > 0)
+        {
+            var avoidGamesSet = BotUser.AvoidGames
+                .Select(g => g.ToLower())
+                .ToHashSet();
+
+            campaigns.RemoveAll(x =>
+                x.Game is not null &&
+                avoidGamesSet.Contains((x.Game.DisplayName ?? x.Game.Name ?? string.Empty).ToLower()));
         }
 
         foreach (var campaign in campaigns.ToList())
